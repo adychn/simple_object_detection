@@ -1,9 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
-
 # In[ ]:
-
-
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
 import glob
 import os
@@ -26,16 +23,14 @@ import matplotlib.pyplot as plt
 get_ipython().run_line_magic('matplotlib', 'inline')
 
 
-# # Train a dog-cat classifier
-
 # In[ ]:
-
-
-TRAIN_DIR = '../input/train/'
-TEST_DIR = '../input/test/'
+# # Train a dog-cat classifier
+# Careful of the path construction in Windows vs Mac/Unix
+TRAIN_DIR = 'C:\\Users\\andyc\\Desktop\\datasets\\c-d-pictures\\train'
+TEST_DIR = 'C:\\Users\\andyc\\Desktop\\datasets\\c-d-pictures\\test'
 
 IMG_SIZE = 50
-def read_image(file_path):        
+def read_image(file_path):
     img= cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
     img= cv2.resize(img, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_CUBIC)
     return img
@@ -48,16 +43,16 @@ def prep_data(images):
         image = read_image(image_file)
         data[i] = image.reshape(-1, IMG_SIZE, IMG_SIZE, 1)
         if i%5000 == 0: print('Processed {} of {}'.format(i, count))
-    
+
     return data
 
 train_cats = sorted(glob.glob(os.path.join(TRAIN_DIR, 'cat*.jpg')))
 train_dogs = sorted(glob.glob(os.path.join(TRAIN_DIR, 'dog*.jpg')))
-train_all = train_dogs+train_cats 
+
+train_all = train_dogs+train_cats
+test_all = sorted(glob.glob(os.path.join(TEST_DIR, '*.jpg')))
 
 random.Random(4).shuffle(train_all)
-
-test_all = sorted(glob.glob(os.path.join(TEST_DIR, '*.jpg')))
 
 X_train = prep_data([path for path in train_all])
 Y_train = np.array([[1., 0.] if 'dog' in name else [0., 1.] for name in train_all])
@@ -65,10 +60,8 @@ Y_train = np.array([[1., 0.] if 'dog' in name else [0., 1.] for name in train_al
 X_test = prep_data([path for path in test_all])
 Y_test = np.array([[1., 0.] if 'dog' in name else [0., 1.] for name in test_all])
 
-
 # In[ ]:
-
-
+# CNN classification
 convnet = input_data(shape=[None, IMG_SIZE, IMG_SIZE, 1], name='input')
 convnet = conv_2d(convnet, 32, 5, activation='relu')
 convnet = max_pool_2d(convnet, 5)
@@ -86,19 +79,16 @@ convnet = fully_connected(convnet, 2, activation='softmax')
 convnet = regression(convnet, optimizer='adam', learning_rate=0.001, loss='categorical_crossentropy', name='targets')
 
 model = tflearn.DNN(convnet, tensorboard_dir='log')
-model.fit({'input': X_train}, {'targets': Y_train}, n_epoch=3, validation_set=({'input': X_test}, {'targets': Y_test}), 
+model.fit({'input': X_train}, {'targets': Y_train}, n_epoch=3, validation_set=({'input': X_test}, {'targets': Y_test}),
     snapshot_step=500, show_metric=True, run_id='dog-cat')
 
-
-# # Run inference
-
 # In[ ]:
-
-
+# Run inference
+# picture pyramid plus sliding window.
 def pyramid(image, scale=1.5, minSize=(30, 30)):
     # yield the original image
     yield image
-    
+
     # keep looping over the pyramid
     while True:
         # compute the new dimensions of the image and resize it
@@ -113,16 +103,16 @@ def pyramid(image, scale=1.5, minSize=(30, 30)):
 
         # yield the next image in the pyramid
         yield image
-        
+
 def sliding_window(image, stepSize, windowSize):
     for y in range(0, image.shape[0] - windowSize[1], stepSize):
         for x in range(0, image.shape[1] - windowSize[0], stepSize):
             # yield the current window
             yield (x, y, image[y:y + windowSize[1], x:x + windowSize[0]])
 
-def get_grey_and_color_image(path):
+def get_grey_and_color_image(path): # return color in the first argument, grey in the second.
     return cv2.imread(path), cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-            
+
 def run_inference(image):
     (w, h) = (50, 50)
     # loop over the image pyramid
@@ -138,10 +128,10 @@ def run_inference(image):
             input_data[0] = window.reshape(-1, IMG_SIZE, IMG_SIZE, 1)
             out = model.predict(input_data)[0]
 
-            if np.argmax(out) == 1:
-                if out[1] > 0.8:
+            if np.argmax(out) == 1: # cat or dog
+                if out[1] > 0.8: # probablity
                     cats_score.append(out[1])
-                    cats_bbox.append((int(x * scale), int(y * scale), int(w * scale), int(h * scale)))
+                    cats_bbox.append((int(x * scale), int(y * scale), int(w * scale), int(h * scale))) # rescale image back to same size.
             else:
                 if out[0] > 0.8:
                     dogs_score.append(out[0])
@@ -152,39 +142,60 @@ def run_inference(image):
 
 
 # In[ ]:
-
-
 def showWindows(image, dogs_bbox, cats_bbox):
     for (x, y, w, h) in dogs_bbox:
+        # cv2.rectangle(img, pt1, pt2, color, thickness, lineType, shift)
         cv2.rectangle(image, (x, y), (x + w, y + h), (255, 0, 0), 2)
     for (x, y, w, h) in cats_bbox:
         cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
     plt.imshow(np.array(image).astype('uint8'))
     plt.show()
-    
+
 THRESHOLD = 0.2
 def nms(scores, bboxes):
-    # !!! Finish this part !!!
-    pass
+    sortedRes = sorted(zip(scores, bboxes), key=lambda x: x[0], reverse=True) # sort pictures by score
+    scores = [score for (score, bbox) in sortedRes]
+    bboxes = [bbox for (score, bbox) in sortedRes]
 
+    suppress = [0] * len(scores)
+    result = []
+    for i in range(len(bboxes)):
+        if suppress[i] == 1:
+            continue
+
+        area = bboxes[i][2] * bboxes[i][3]
+        result.append(bboxes[i])
+        for j in range(i+1, len(bboxes)):
+            if suppress[j] == 1:
+                continue
+
+            otherArea = bboxes[j][2] * bboxes[j][3]
+
+            # To calculate the area of intersection
+            # top left corner of intersection
+            xx1 = np.maximum(bboxes[i][0], bboxes[j][0])
+            yy1 = np.maximum(bboxes[i][1], bboxes[j][1])
+            # bottom right corner of intersection
+            xx2 = np.minimum(bboxes[i][0] + bboxes[i][2] - 1, bboxes[j][0] + bboxes[j][2] - 1)
+            yy2 = np.minimum(bboxes[i][1] + bboxes[i][3] - 1, bboxes[j][1] + bboxes[j][3] - 1)
+            w = np.maximum(0.0, xx2 - xx1 + 1)
+            h = np.maximum(0.0, yy2 - yy1 + 1)
+            inter = w * h
+
+            # IOU: intersection / smaller area of the two. To prevent a big window with a small window.
+            # If use intersection / union, smaller area won't be delete. So choose depends on situation if have many small windows.
+            ovr = inter / min(area, otherArea)
+            if ovr > THRESHOLD:
+                suppress[j] = 1
+    return result
 
 # In[ ]:
-
-
-color_image, image = get_grey_and_color_image(test_all[1])
+# without NMS
+color_image, image = get_grey_and_color_image(test_all[3]) # color image for us to reference. grey image for CNN to bbox.
 cats_score, cats_bbox, dogs_score, dogs_bbox = run_inference(image)
-
-
-# In[ ]:
-
-
 showWindows(color_image.copy(), dogs_bbox, cats_bbox)
 
-
 # In[ ]:
-
-
 new_dogs_bboxes = nms(dogs_score, dogs_bbox)
 new_cats_bboxes = nms(cats_score, cats_bbox)
 showWindows(color_image.copy(), new_dogs_bboxes, new_cats_bboxes)
-
